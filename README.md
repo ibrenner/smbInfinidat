@@ -24,12 +24,12 @@ Get-smbShares - will retrieve SMB shares metadata information \
 New-smbReplica - will create an Async replica to another InfiniBox for a SMB volume 
 
 ## Example 
-The following will retrieve all share information related to test fileserver \
+The following will retrieve all share information related to test fileserver 
 ```
  Get-smbShares -src_system ibox2411 -src_username admin -fileserver test
   ```
 
-The following will create an Async replica for filesystem named test1 with rpo set to 2 minutes and sync interval at 1 minute \
+The following will create an Async replica for filesystem named test1 with rpo set to 2 minutes and sync interval at 1 minute 
 ```
 New-smbReplica -src_system ibox24 -src_username admin -tgt_system ibox14 -tgt_username iscsi -tgt_pool pool1 -fileserver testfs -fs test1 -rpo 120 -sync_interval 60 -new_tgt_name tstrepvo
 ```
