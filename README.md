@@ -15,7 +15,7 @@ If some of the folders in the path does not exist make sure to create them first
 Now create a folder named smbInfinidat under the Modules folder. \
 Put smbInfinidat.psd1 and smbInfinidat.psm1 in this folder. \
 now you can run ```  Get-Module -ListAvailable ``` \
-and you should be able to see the new module listed and can use `import-module smbInfinidat` to import it \
+and you should be able to see the new module listed and can use `import-module smbInfinidat` to import it 
 
 ## Usage
 The module has 2 commands: \
