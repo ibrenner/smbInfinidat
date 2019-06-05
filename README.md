@@ -5,12 +5,13 @@ Powershell module for InfiniBox SMB, to retrieve share information and create as
 the script uses powershell 6 and above
 
 ## Installation
-please run the `$env:PSModulePath` to check which locations are available for modules to be loaded from:
+please run `$env:PSModulePath` to check which locations are available for modules to be loaded from:
 ```
 PS:> $env:PSModulePath
 C:\Users\username\Documents\PowerShell\Modules;C:\Program Files\PowerShell\Modules;c:\program files\powershell\6\Modules;C:\Windows\system32\WindowsPowerShell\v1.0\Modules
 
 ```
+*please note that different OSs (windows, Mac...) will display different path locations.*
 its preffered to use the documents path folder under your username. \
 If some of the folders in the path does not exist make sure to create them first. \
 Now create a folder named smbInfinidat under the Modules folder. \
