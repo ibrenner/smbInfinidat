@@ -11,7 +11,8 @@ PS:> $env:PSModulePath
 C:\Users\username\Documents\PowerShell\Modules;C:\Program Files\PowerShell\Modules;c:\program files\powershell\6\Modules;C:\Windows\system32\WindowsPowerShell\v1.0\Modules
 
 ```
-*please note that different OSs (windows, Mac...) will display different path locations.* \ 
+*please note that different OSs (windows, Mac...) will display different path locations.*  
+\
 its preffered to use the documents path folder under your username. \
 If some of the folders in the path does not exist make sure to create them first. \
 Now create a folder named smbInfinidat under the Modules folder. \
