@@ -28,28 +28,32 @@ function New-Replica{
             )
         $link = irm -Method Get -Uri "https://$($srcibox)/api/rest/links?remote_system_name=eq:$($dstibox)" -Headers $hdrs -SkipCertificateCheck 
         $rempool = irm -Method Get -Uri "https://$($srcibox)/api/rest/remote/$($link.result.id)/api/rest/pools?name=eq:$($dstpool)" -Headers $hdrs -SkipCertificateCheck 
-        $json = @{
-            "sync_interval" = $interval
-            "entity_type" = "VOLUME"
-            "replication_type" = "ASYNC"
-            "link_id" = $link.result.id
-            "rpo_type"= "TIME"
-            "rpo_value" = $rpo
-            "remote_pool_id" = $rempool.result.id
-            "entity_pairs" = @(
-                @{
-                "local_entity_id" =  $($srcvol.result.volume_id)
-                "remote_base_action" = "CREATE"
-                "remote_entity_name" = $newname
-                "local_base_action" = "NO_BASE_DATA"
-                }
-            )
-        }
-        $json_payload = $json | ConvertTo-Json
-        $replica = iwr -Method Post -Uri "https://$($srcibox)/api/rest/replicas" -Headers $hdrs -Body $json_payload -SkipCertificateCheck
-        return $replica
-        }
-
+        if($rempool.result){
+            $json = @{
+                "sync_interval" = $interval
+                "entity_type" = "VOLUME"
+                "replication_type" = "ASYNC"
+                "link_id" = $link.result.id
+                "rpo_type"= "TIME"
+                "rpo_value" = $rpo
+                "remote_pool_id" = $rempool.result.id
+                "entity_pairs" = @(
+                    @{
+                    "local_entity_id" =  $($srcvol.result.volume_id)
+                    "remote_base_action" = "CREATE"
+                    "remote_entity_name" = $newname
+                    "local_base_action" = "NO_BASE_DATA"
+                    }
+                )
+            }
+            $json_payload = $json | ConvertTo-Json
+            $replica = iwr -Method Post -Uri "https://$($srcibox)/api/rest/replicas" -Headers $hdrs -Body $json_payload -SkipCertificateCheck
+            return $replica
+            }
+        else{
+                Write-Host "Error: Pool Not Found" -ForegroundColor Red 
+                break
+                }}
 
        
 
@@ -70,10 +74,11 @@ function EncodeCreds{
         [ValidateNotNull()]
         [parameter(Mandatory)]
         $user,
-        $password
+        $password,
+        $ibox
     )
     if(!$password){ 
-        $p = Read-Host "Enter password for $($user)" -AsSecureString
+        $p = Read-Host "Enter password for $($user)@$($ibox)" -AsSecureString
         $password = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($p))
     }
     $userpass  = [System.Text.Encoding]::UTF8.GetBytes("$($user):$($password)")
@@ -114,24 +119,29 @@ function Get-ShareMeta{
    $fileserver,
    $filesystem
    )
+   $cl = irm -Uri "https://$($ibox)/api/plugins/smb/cluster" -Method Get -SkipCertificateCheck -Headers $hd
+   $shr1 = irm -Uri "https://$($ibox)/api/plugins/smb/share?page_size=800" -Method Get -SkipCertificateCheck -Headers $hd
+   foreach($share in $shr1.result){
+    foreach($cls in $cl.result){
+         if ($share.cluster_uuid -eq $cls.cluster_uuid) {
+                 $share | Add-Member -MemberType NoteProperty -name "fileserver_name" -Value $cls.fileserver_name -Force
+                 }
+               }}
+
    if($fileserver){
-     $shr1 = irm -Uri "https://$($ibox)/api/plugins/smb/share?fileserver_name=$($fileserver)" -Method Get -SkipCertificateCheck -Headers $hd
-     return $shr1
+     return ($shr1.result | ?{$_.fileserver_name -eq $fileserver})
+
      }
    elseif($filesystem){
-        $shr1 = irm -Uri "https://$($ibox)/api/plugins/smb/share?filesystem_name=$($filesystem)" -Method Get -SkipCertificateCheck -Headers $hd
-        return $shr1
+        return ($shr1.result |  ?{$_.filesystem_name -eq $filesystem})
    }
    elseif($fileserver -and $filesystem){
-       $shr1 = irm -Uri "https://$($ibox)/api/plugins/smb/share?filesystem_name=$($filesystem)&fileserver_name=$($fileserver)" -Method Get -SkipCertificateCheck -Headers $hd
-        return $shr1
+        return ($shr1.result |  ?{$_.fileserver_name -eq $fileserver -and $_.filesystem_name -eq $filesystem })
    }
    else{
-        $shr1 = irm -Uri "https://$($ibox)/api/plugins/smb/share" -Method Get -SkipCertificateCheck -Headers $hd
-        return $shr1
+        return $shr1.result
    }
    
-       
    
 }
 
@@ -140,7 +150,7 @@ function Get-ShareMeta{
     .Description
     The New-smbReplica function creates an Async replica for SMB volume.
 #>
-function New-smbReplica{
+function New-InfiniboxSmbReplica{
     Param(
     [Parameter(Mandatory=$True,Position=1)]
     [string]$src_system,
@@ -184,8 +194,8 @@ function New-smbReplica{
 
       
 CheckPSVer
-$screds = EncodeCreds -User $src_username -Password $src_password
-$dcreds = EncodeCreds -User $tgt_username -Password $tgt_password
+$screds = EncodeCreds -User $src_username -Password $src_password -ibox $src_system
+$dcreds = EncodeCreds -User $tgt_username -Password $tgt_password -ibox $tgt_system
 $headers = New-Headers $screds $dcreds
 $rposec = ConvertTime -time $rpo
 $intervalsec = ConvertTime -time $sync_interval
@@ -196,7 +206,7 @@ catch{
     [Console]::ForegroundColor = 'red'
     $smbvalid_err = ($_ | ConvertFrom-Json)
     if($smbvalid_err.error.code -eq "UNKNOWN_PATH"){
-    [Console]::Error.WriteLine("Error: SMB Not Found")
+    [Console]::Error.WriteLine("Error: InfiniBox $($src_system) doesn't support SMB")
     [Console]::ResetColor()
         break
     } else{
@@ -228,7 +238,7 @@ catch{
     .Description
     The Get-smbShares function gets the smb shares metadata information from InfiniBox.
 #>
-function Get-smbShares{
+function Get-InfiniboxSmbShares{
  Param(
     
     [Parameter(Mandatory=$True,Position=1)]
@@ -252,7 +262,7 @@ function Get-smbShares{
        )
  
 CheckPSVer
-$screds = EncodeCreds -User $src_username -Password $src_password
+$screds = EncodeCreds -User $src_username -Password $src_password -ibox $src_system
 $headers = New-Headers $screds $dcreds
 
 try{
@@ -262,7 +272,7 @@ catch{
     [Console]::ForegroundColor = 'red'
     $shr_err = ($_ | ConvertFrom-Json)
     if($shr_err.error.code -eq "UNKNOWN_PATH"){
-    [Console]::Error.WriteLine("Error: SMB Not Found")
+    [Console]::Error.WriteLine("Error: InfiniBox $($src_system) doesn't support SMB")
     [Console]::ResetColor()
         break
     } else{
@@ -273,9 +283,9 @@ catch{
 
 $shr = Get-ShareMeta -ibox $src_system -hd $headers -fileserver $fileserver -filesystem $filesystem
 if($outputfile){
-    $shr.result | Out-File -FilePath $outputfile    
+    $shr | Out-File -FilePath $outputfile    
     }else{
-    $shr.result
+    $shr
     }
     }
 
