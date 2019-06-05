@@ -216,20 +216,21 @@ catch{
 }}
 
 $vol = Get-Vol -ibox $src_system -fileserver $fileserver -fs $fs -hd $headers
-try{
-$replica = New-Replica -srcibox $src_system -srcvol $vol -dstibox $tgt_system -dstpool $tgt_pool -rpo $rposec -interval $intervalsec -newname $new_tgt_name -hdrs $headers
-if($replica.StatusCode -eq 201){
-    Write-Host "Replica for filesystem $($fs) created" -ForegroundColor Green
+if($vol.result){
+    try{
+    $replica = New-Replica -srcibox $src_system -srcvol $vol -dstibox $tgt_system -dstpool $tgt_pool -rpo $rposec -interval $intervalsec -newname $new_tgt_name -hdrs $headers
+    if($replica.StatusCode -eq 201){
+        Write-Host "Replica for filesystem $($fs) created" -ForegroundColor Green
+        }
     }
-}
-catch{
-    $err = ($_ | ConvertFrom-Json)
-    [Console]::ForegroundColor = 'red'
-    [Console]::Error.WriteLine($err.error)
-    [Console]::ResetColor()
-    break
-    }
- }
+    catch{
+        $err = ($_ | ConvertFrom-Json)
+        [Console]::ForegroundColor = 'red'
+        [Console]::Error.WriteLine($err.error)
+        [Console]::ResetColor()
+        break
+        }
+     }}
 
 
 
@@ -257,7 +258,10 @@ function Get-InfiniboxSmbShares{
     [string]$filesystem,
 
     [Parameter(Mandatory=$False,Position=6)]
-    [string]$outputfile
+    [string]$outputfile,
+
+    [Parameter(Mandatory=$False,Position=7)]
+    [switch]$csv
        
        )
  
@@ -284,10 +288,20 @@ catch{
 $shr = Get-ShareMeta -ibox $src_system -hd $headers -fileserver $fileserver -filesystem $filesystem
 if($outputfile){
     $shr | Out-File -FilePath $outputfile    
-    }else{
+    }
+elseif($csv){
+     $shr | ConvertTo-Csv
+     }
+elseif($csv -and $outputfile){
+     $shr | ConvertTo-Csv| Out-File -FilePath $outputfile     
+     }
+else{
     $shr
+}
+   
+   
     }
-    }
+    
 
 
 
