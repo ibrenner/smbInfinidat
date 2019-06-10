@@ -156,7 +156,8 @@ function Get-ShareMeta{
     Creation Date:  06/10/2019
     Purpose/Change: Updated for new connection mgmt
     *******Disclaimer:******************************************************
-    This script is offered "as is" with no warranty.  While it has been tested and working in my environment, it is recommended that you first test 
+    This script is offered "as is" with no warranty. 
+    While it has been tested and working in my environment, it is recommended that you first test 
     it in a lab environment before using in a production environment. 
     ************************************************************************
   #>
@@ -187,7 +188,7 @@ function New-InfiniboxSmbReplica{
     [string]$fileserver,
 
     [Parameter(Mandatory=$True,Position=9)]
-    [string]$fs,
+    [string]$filesystem,
 
     #Sets RPO in seconds format
     [Parameter(Mandatory=$True,Position=10)]
@@ -225,12 +226,12 @@ catch{
         break
 }}
 
-$vol = Get-Vol -ibox $src_system -fileserver $fileserver -fs $fs -hd $headers
+$vol = Get-Vol -ibox $src_system -fileserver $fileserver -fs $filesystem -hd $headers
 if($vol.result){
     try{
     $replica = New-Replica -srcibox $src_system -srcvol $vol -dstibox $tgt_system -dstpool $tgt_pool -rpo $rposec -interval $intervalsec -newname $new_tgt_name -hdrs $headers
     if($replica.StatusCode -eq 201){
-        Write-Host "Replica for filesystem $($fs) created" -ForegroundColor Green
+        Write-Host "Replica for filesystem $($filesystem) created" -ForegroundColor Green
         }
     }
     catch{
@@ -257,7 +258,8 @@ if($vol.result){
     Author:         Idan Brenner
     Creation Date:  06/10/2019
     *******Disclaimer:******************************************************
-    This script is offered "as is" with no warranty.  While it has been tested and working in my environment, it is recommended that you first test 
+    This script is offered "as is" with no warranty.
+    While it has been tested and working in my environment, it is recommended that you first test 
     it in a lab environment before using in a production environment. 
     ************************************************************************
 #>
@@ -308,14 +310,15 @@ catch{
 }}
 
 $shr = Get-ShareMeta -ibox $src_system -hd $headers -fileserver $fileserver -filesystem $filesystem
-if($outputfile){
+if($csv -and $outputfile){
+    Write-Host "inside"
+     $shr | ConvertTo-Csv| Out-File -FilePath $outputfile     
+     }
+elseif($outputfile){
     $shr | Out-File -FilePath $outputfile    
     }
 elseif($csv){
      $shr | ConvertTo-Csv
-     }
-elseif($csv -and $outputfile){
-     $shr | ConvertTo-Csv| Out-File -FilePath $outputfile     
      }
 else{
     $shr
@@ -323,11 +326,4 @@ else{
    
     }
     
-
-
-
-
-
-
-
 
