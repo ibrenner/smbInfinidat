@@ -1,6 +1,5 @@
 $ErrorActionPreference = "Stop"
 
-
  function Get-Vol{
     param(
         $ibox,
@@ -12,13 +11,10 @@ $ErrorActionPreference = "Stop"
     return $fs1
 }
 
-
-
-
 function New-Replica{
         param(
             $srcibox,
-            $srcvol,
+            $srcvol, 
             $dstibox,
             $dstpool,
             $rpo,
@@ -28,6 +24,10 @@ function New-Replica{
             )
         $link = irm -Method Get -Uri "https://$($srcibox)/api/rest/links?remote_system_name=eq:$($dstibox)" -Headers $hdrs -SkipCertificateCheck 
         $rempool = irm -Method Get -Uri "https://$($srcibox)/api/rest/remote/$($link.result.id)/api/rest/pools?name=eq:$($dstpool)" -Headers $hdrs -SkipCertificateCheck 
+        if(!$newname){
+            $rand = get-random -Minimum 1000 -Maximum 99999
+            $newname = "$($srcvol.result.name)_$($rand)"
+        }
         if($rempool.result){
             $json = @{
                 "sync_interval" = $interval
@@ -53,9 +53,8 @@ function New-Replica{
         else{
                 Write-Host "Error: Pool Not Found" -ForegroundColor Red 
                 break
-                }}
+        }}
 
-       
 
 function CheckPSVer{
     $powershell_version = $PSVersionTable.PSVersion.Major
@@ -65,9 +64,8 @@ function CheckPSVer{
 	    Write-Host  "This script requires PowerShell version 6 or above" -ForegroundColor Red 
 	    Write-Host "Installed version: $($powershell_version)" -ForegroundColor Red 
 	    Exit 1
-}
-
-}
+        }
+    }
 
 function EncodeCreds{
     param(
@@ -111,7 +109,6 @@ function ConvertTime{
 }
 
 
-
 function Get-ShareMeta{
    param(
    $ibox,
@@ -141,15 +138,28 @@ function Get-ShareMeta{
    else{
         return $shr1.result
    }
-   
-   
-}
+ }
 
 
-<#
-    .Description
-    The New-smbReplica function creates an Async replica for SMB volume.
-#>
+ <#
+    .SYNOPSIS
+    The New-InfiniboxSmbReplica function creates an Async replica for SMB volume.
+    .DESCRIPTION
+    Creates Async replication for SMB volume. 
+    .INPUTS
+    source and destination properties (ibox and credentials), fileserver, filesystem, RPO, sync interval and new target name.
+    .OUTPUTS
+    Success or Failure of the operation.
+    .NOTES
+    Version:        1.0
+    Author:         Idan Brenner
+    Creation Date:  06/10/2019
+    Purpose/Change: Updated for new connection mgmt
+    *******Disclaimer:******************************************************
+    This script is offered "as is" with no warranty.  While it has been tested and working in my environment, it is recommended that you first test 
+    it in a lab environment before using in a production environment. 
+    ************************************************************************
+  #>
 function New-InfiniboxSmbReplica{
     Param(
     [Parameter(Mandatory=$True,Position=1)]
@@ -187,7 +197,7 @@ function New-InfiniboxSmbReplica{
     [Parameter(Mandatory=$True,Position=11)]
     [int]$sync_interval,
 
-    [Parameter(Mandatory=$True,Position=12)]
+    [Parameter(Mandatory=$False,Position=12)]
     [string]$new_tgt_name
 
        )
@@ -231,13 +241,25 @@ if($vol.result){
         break
         }
      }}
+ 
 
-
-
-    
 <#
-    .Description
+    .SYNOPSIS
+    Getting Share metadata information.
+    .DESCRIPTION
     The Get-smbShares function gets the smb shares metadata information from InfiniBox.
+    .INPUTS
+    source properties (ibox and credentials), fileserver, filesystem and output type.
+    .OUTPUTS
+    Share metadata information.
+    .NOTES
+    Version:        1.0
+    Author:         Idan Brenner
+    Creation Date:  06/10/2019
+    *******Disclaimer:******************************************************
+    This script is offered "as is" with no warranty.  While it has been tested and working in my environment, it is recommended that you first test 
+    it in a lab environment before using in a production environment. 
+    ************************************************************************
 #>
 function Get-InfiniboxSmbShares{
  Param(
@@ -298,7 +320,6 @@ elseif($csv -and $outputfile){
 else{
     $shr
 }
-   
    
     }
     
