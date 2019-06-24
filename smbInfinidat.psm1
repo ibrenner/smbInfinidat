@@ -125,15 +125,14 @@ function Get-ShareMeta{
                  }
                }}
 
-   if($fileserver){
-     return ($shr1.result | ?{$_.fileserver_name -eq $fileserver})
-
-     }
-   elseif($filesystem){
+   if($fileserver -and $filesystem){
+       return ($shr1.result |  ?{$_.fileserver_name -eq $fileserver -and $_.filesystem_name -eq $filesystem })
+    }
+    elseif($filesystem){
         return ($shr1.result |  ?{$_.filesystem_name -eq $filesystem})
-   }
-   elseif($fileserver -and $filesystem){
-        return ($shr1.result |  ?{$_.fileserver_name -eq $fileserver -and $_.filesystem_name -eq $filesystem })
+    }
+    elseif($fileserver){
+        return ($shr1.result | ?{$_.fileserver_name -eq $fileserver})
    }
    else{
         return $shr1.result
@@ -241,7 +240,11 @@ if($vol.result){
         [Console]::ResetColor()
         break
         }
-     }}
+     }
+else{ 
+    Write-Host "Wrong Fileserver or Filesystem" -ForegroundColor Red
+    break
+    }}
  
 
 <#
@@ -310,20 +313,24 @@ catch{
 }}
 
 $shr = Get-ShareMeta -ibox $src_system -hd $headers -fileserver $fileserver -filesystem $filesystem
-if($csv -and $outputfile){
-    Write-Host "inside"
-     $shr | ConvertTo-Csv| Out-File -FilePath $outputfile     
-     }
-elseif($outputfile){
-    $shr | Out-File -FilePath $outputfile    
+if($shr){
+    if($csv -and $outputfile){
+        Write-Host "inside"
+         $shr | ConvertTo-Csv| Out-File -FilePath $outputfile     
+         }
+    elseif($outputfile){
+        $shr | Out-File -FilePath $outputfile    
+        }
+    elseif($csv){
+         $shr | ConvertTo-Csv
+         }
+    else{
+        $shr
     }
-elseif($csv){
-     $shr | ConvertTo-Csv
-     }
-else{
-    $shr
 }
-   
-    }
+else{
+    Write-Host "Wrong Fileserver or Filesystem" -ForegroundColor Red
+    break
+}}
     
 
