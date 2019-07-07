@@ -11,6 +11,21 @@ $ErrorActionPreference = "Stop"
     return $fs1
 }
 
+
+function Get-iboxver{
+    param(
+        $ibox,
+        $hd
+    )
+    $iboxver = irm -Uri "https://$($ibox)/api/rest/system" -Method Get  -Headers $hd -SkipCertificateCheck
+    if([System.Version]$iboxver.result.version -lt [System.Version]"4.0.40"){
+        [Console]::ForegroundColor = 'red'
+        [Console]::Error.WriteLine("Error: InfiniBox $($ibox) doesn't support SMB")
+        [Console]::ResetColor()
+        break 
+    }
+}
+
 function New-Replica{
         param(
             $srcibox,
@@ -209,43 +224,45 @@ $dcreds = EncodeCreds -User $tgt_username -Password $tgt_password -ibox $tgt_sys
 $headers = New-Headers $screds $dcreds
 $rposec = ConvertTime -time $rpo
 $intervalsec = ConvertTime -time $sync_interval
-try{
-    $smbtst = iwr -Uri "https://$($src_system)/api/rest/tenants?name=SMB" -Headers $headers -SkipCertificateCheck
-}
-catch{
-    [Console]::ForegroundColor = 'red'
-    $smbvalid_err = ($_ | ConvertFrom-Json)
-    if($smbvalid_err.error.code -eq "UNKNOWN_PATH"){
-    [Console]::Error.WriteLine("Error: InfiniBox $($src_system) doesn't support SMB")
-    [Console]::ResetColor()
-        break
-    } else{
-    [Console]::Error.WriteLine($smbvalid_err.error.message)
-    [Console]::ResetColor()
-        break
-}}
+Get-iboxver -ibox $src_system -hd $headers
+#if([System.Version]$ibxver.result.version -lt [System.Version]"4.0.40"){
+#    [Console]::ForegroundColor = 'red'
+#    [Console]::Error.WriteLine("Error: InfiniBox $($src_system) doesn't support SMB")
+#    [Console]::ResetColor()
+#    break 
+#}
 
-$vol = Get-Vol -ibox $src_system -fileserver $fileserver -fs $filesystem -hd $headers
-if($vol.result){
-    try{
-    $replica = New-Replica -srcibox $src_system -srcvol $vol -dstibox $tgt_system -dstpool $tgt_pool -rpo $rposec -interval $intervalsec -newname $new_tgt_name -hdrs $headers
-    if($replica.StatusCode -eq 201){
-        Write-Host "Replica for filesystem $($filesystem) created" -ForegroundColor Green
+$smbtst = irm -Uri "https://$($src_system)/api/rest/tenants?name=SMB" -Headers $headers -SkipCertificateCheck
+if($smbtst.result){
+    $vol = Get-Vol -ibox $src_system -fileserver $fileserver -fs $filesystem -hd $headers
+    if($vol.result){
+        try{
+        $replica = New-Replica -srcibox $src_system -srcvol $vol -dstibox $tgt_system -dstpool $tgt_pool -rpo $rposec -interval $intervalsec -newname $new_tgt_name -hdrs $headers
+        if($replica.StatusCode -eq 201){
+            Write-Host "Replica for filesystem $($filesystem) created" -ForegroundColor Green
+            }
         }
-    }
-    catch{
-        $err = ($_ | ConvertFrom-Json)
-        [Console]::ForegroundColor = 'red'
-        [Console]::Error.WriteLine($err.error)
-        [Console]::ResetColor()
+        catch{
+            $err = ($_ | ConvertFrom-Json)
+            [Console]::ForegroundColor = 'red'
+            [Console]::Error.WriteLine($err.error)
+            [Console]::ResetColor()
+            break
+            }
+         }
+    else{ 
+        Write-Host "Wrong Fileserver or Filesystem" -ForegroundColor Red
         break
-        }
-     }
-else{ 
-    Write-Host "Wrong Fileserver or Filesystem" -ForegroundColor Red
-    break
-    }}
- 
+        }}
+    else{
+        Write-Host "SMB Not configured on $($src_system)" -ForegroundColor Red
+    }
+    }
+
+
+
+
+
 
 <#
     .SYNOPSIS
@@ -295,42 +312,34 @@ function Get-InfiniboxSmbShares{
 CheckPSVer
 $screds = EncodeCreds -User $src_username -Password $src_password -ibox $src_system
 $headers = New-Headers $screds $dcreds
+Get-iboxver -ibox $src_system -hd $headers
 
-try{
-    $smbtst = iwr -Uri "https://$($src_system)/api/rest/tenants?name=SMB" -Headers $headers -SkipCertificateCheck
-}
-catch{
-    [Console]::ForegroundColor = 'red'
-    $shr_err = ($_ | ConvertFrom-Json)
-    if($shr_err.error.code -eq "UNKNOWN_PATH"){
-    [Console]::Error.WriteLine("Error: InfiniBox $($src_system) doesn't support SMB")
-    [Console]::ResetColor()
-        break
-    } else{
-    [Console]::Error.WriteLine($shr_err.error.message)
-    [Console]::ResetColor()
-        break
-}}
-
-$shr = Get-ShareMeta -ibox $src_system -hd $headers -fileserver $fileserver -filesystem $filesystem
-if($shr){
-    if($csv -and $outputfile){
-        Write-Host "inside"
-         $shr | ConvertTo-Csv| Out-File -FilePath $outputfile     
-         }
-    elseif($outputfile){
-        $shr | Out-File -FilePath $outputfile    
+$smbtst = irm -Uri "https://$($src_system)/api/rest/tenants?name=SMB" -Headers $headers -SkipCertificateCheck
+if($smbtst.result){
+    $shr = Get-ShareMeta -ibox $src_system -hd $headers -fileserver $fileserver -filesystem $filesystem
+    if($shr){
+        if($csv -and $outputfile){
+            Write-Host "inside"
+             $shr | ConvertTo-Csv| Out-File -FilePath $outputfile     
+             }
+        elseif($outputfile){
+            $shr | Out-File -FilePath $outputfile    
+            }
+        elseif($csv){
+             $shr | ConvertTo-Csv
+             }
+        else{
+            $shr
         }
-    elseif($csv){
-         $shr | ConvertTo-Csv
-         }
+    }
     else{
-        $shr
+        Write-Host "Wrong Fileserver or Filesystem" -ForegroundColor Red
+        break
+        }
+    }
+else{
+    Write-Host "SMB Not configured on $($src_system)" -ForegroundColor Red
     }
 }
-else{
-    Write-Host "Wrong Fileserver or Filesystem" -ForegroundColor Red
-    break
-}}
     
 
