@@ -26,49 +26,78 @@ function Get-iboxver{
     }
 }
 
+
 function New-Replica{
         param(
             $srcibox,
             $srcvol, 
             $dstibox,
-            $dstpool,
             $rpo,
+            $new_vol,
             $interval,
-            $newname,
             $hdrs
             )
         $link = irm -Method Get -Uri "https://$($srcibox)/api/rest/links?remote_system_name=eq:$($dstibox)" -Headers $hdrs -SkipCertificateCheck 
-        $rempool = irm -Method Get -Uri "https://$($srcibox)/api/rest/remote/$($link.result.id)/api/rest/pools?name=eq:$($dstpool)" -Headers $hdrs -SkipCertificateCheck 
-        if(!$newname){
-            $rand = get-random -Minimum 1000 -Maximum 99999
-            $newname = "$($srcvol.result.name)_$($rand)"
-        }
-        if($rempool.result){
-            $json = @{
-                "sync_interval" = $interval
-                "entity_type" = "VOLUME"
-                "replication_type" = "ASYNC"
-                "link_id" = $link.result.id
-                "rpo_type"= "TIME"
-                "rpo_value" = $rpo
-                "remote_pool_id" = $rempool.result.id
-                "entity_pairs" = @(
-                    @{
-                    "local_entity_id" =  $($srcvol.result.volume_id)
-                    "remote_base_action" = "CREATE"
-                    "remote_entity_name" = $newname
-                    "local_base_action" = "NO_BASE_DATA"
-                    }
+        $json = @{
+            "sync_interval" = $interval
+            "entity_type" = "VOLUME"
+            "replication_type" = "ASYNC"
+            "link_id" = $link.result.id
+            "rpo_type"= "TIME"
+            "rpo_value" = $rpo
+            "entity_pairs" = @(
+                @{
+                "local_entity_id" =  $($srcvol.result.volume_id)
+                "remote_base_action" = "NO_BASE_DATA"
+                "remote_entity_id" = $($new_vol.result.id)
+                "local_base_action" = "NO_BASE_DATA"
+                }
                 )
             }
             $json_payload = $json | ConvertTo-Json
             $replica = iwr -Method Post -Uri "https://$($srcibox)/api/rest/replicas" -Headers $hdrs -Body $json_payload -SkipCertificateCheck
             return $replica
             }
-        else{
-                Write-Host "Error: Pool Not Found" -ForegroundColor Red 
-                break
-        }}
+       
+
+function Get-Pool{
+    param(
+        $ibox,
+        $tenant,
+        $fsname,      
+        $hd
+    )
+    $pool = irm -Uri "https://$($ibox)/api/rest/pools?tenant_id=$($tenant.result.id)&name=$($fsname)" -Headers $hd -SkipCertificateCheck
+    return $pool
+}
+
+function Get-Tenant{
+    param(
+            $ibox,
+            $headers
+        )
+    $smbtst = irm -Uri "https://$($ibox)/api/rest/tenants?name=SMB" -Headers $headers -SkipCertificateCheck
+    return $smbtst
+}
+
+
+function New-Vol{
+    param(
+        $ibox,
+        $headers,
+        $tgt_fileserver,
+        $pool,
+        $vol
+        )
+        $json = @{
+            "pool_id" = $pool.result.id
+            "name" = "$($tgt_fileserver)_$($vol.result.name)"
+            "provtype" = "THIN"
+            "size" = $vol.result.size
+        }
+        $json_payload = $json | ConvertTo-Json
+        irm -Method Post -Uri "https://$($ibox)/api/rest/volumes" -Headers $headers -Body $json_payload -SkipCertificateCheck
+}
 
 
 function CheckPSVer{
@@ -196,10 +225,10 @@ function New-InfiniboxSmbReplica{
     [string]$tgt_password,
 
     [Parameter(Mandatory=$True,Position=7)]
-    [string]$tgt_pool,
+    [string]$tgt_fileserver,
 
     [Parameter(Mandatory=$True,Position=8)]
-    [string]$fileserver,
+    [string]$src_fileserver,
 
     [Parameter(Mandatory=$True,Position=9)]
     [string]$filesystem,
@@ -210,10 +239,7 @@ function New-InfiniboxSmbReplica{
 
     #Sets sync interval in seconds format
     [Parameter(Mandatory=$True,Position=11)]
-    [int]$sync_interval,
-
-    [Parameter(Mandatory=$False,Position=12)]
-    [string]$new_tgt_name
+    [int]$sync_interval
 
        )
 
@@ -222,45 +248,59 @@ CheckPSVer
 $screds = EncodeCreds -User $src_username -Password $src_password -ibox $src_system
 $dcreds = EncodeCreds -User $tgt_username -Password $tgt_password -ibox $tgt_system
 $headers = New-Headers $screds $dcreds
+$tgthdrs = New-Headers $dcreds
 $rposec = ConvertTime -time $rpo
 $intervalsec = ConvertTime -time $sync_interval
 Get-iboxver -ibox $src_system -hd $headers
-#if([System.Version]$ibxver.result.version -lt [System.Version]"4.0.40"){
-#    [Console]::ForegroundColor = 'red'
-#    [Console]::Error.WriteLine("Error: InfiniBox $($src_system) doesn't support SMB")
-#    [Console]::ResetColor()
-#    break 
-#}
-
-$smbtst = irm -Uri "https://$($src_system)/api/rest/tenants?name=SMB" -Headers $headers -SkipCertificateCheck
-if($smbtst.result){
-    $vol = Get-Vol -ibox $src_system -fileserver $fileserver -fs $filesystem -hd $headers
-    if($vol.result){
-        try{
-        $replica = New-Replica -srcibox $src_system -srcvol $vol -dstibox $tgt_system -dstpool $tgt_pool -rpo $rposec -interval $intervalsec -newname $new_tgt_name -hdrs $headers
-        if($replica.StatusCode -eq 201){
-            Write-Host "Replica for filesystem $($filesystem) created" -ForegroundColor Green
+Get-iboxver -ibox $tgt_system -hd $tgthdrs
+$smbtst_src = Get-Tenant -ibox $src_system -headers $headers
+$smbtst_tgt = Get-Tenant -ibox $tgt_system -headers $tgthdrs
+if($smbtst_tgt.result){
+    $filesrv_src = irm -Uri "https://$($src_system)/api/plugins/smb/cluster?fileserver_name=$($src_fileserver)" -Headers $headers -SkipCertificateCheck
+    $filesrv_tgt = irm -Uri "https://$($tgt_system)/api/plugins/smb/cluster?fileserver_name=$($tgt_fileserver)" -Headers $tgthdrs -SkipCertificateCheck
+    $tgt_pool = Get-Pool -ibox $tgt_system -tenant $smbtst_tgt -fsname $tgt_fileserver -hd $tgthdrs
+    if($filesrv_tgt.result.status -eq "ACTIVE"){
+        if($filesrv_src.result.status -eq "ACTIVE"){
+            if($smbtst_src.result){
+                $vol = Get-Vol -ibox $src_system -fileserver $fileserver -fs $filesystem -hd $headers
+                if($vol.result){
+                    try{
+                    $empty_vol= New-Vol -ibox $tgt_system -headers $tgthdrs -tgt_fileserver $tgt_fileserver -pool $tgt_pool -vol $vol
+                    $replica = New-Replica -srcibox $src_system -srcvol $vol -dstibox $tgt_system -rpo $rposec -interval $intervalsec -hdrs $headers -new_vol $empty_vol
+                    if($replica.StatusCode -eq 201){
+                        Write-Host "Replica for filesystem $($filesystem) created" -ForegroundColor Green
+                        }
+                    }
+                    catch{
+                        $err = ($_ | ConvertFrom-Json)
+                        [Console]::ForegroundColor = 'red'
+                        [Console]::Error.WriteLine($err.error)
+                        [Console]::ResetColor()
+                        break
+                        }
+                     }
+                else{ 
+                    Write-Host "Wrong Fileserver or Filesystem" -ForegroundColor Red
+                    break
+                    }
+                }
+            else{
+                Write-Host "SMB Not configured on $($src_system)" -ForegroundColor Red
+                }
+            }
+        else{
+            Write-Host "Fileserver Not Configured on $($src_system)" -ForegroundColor Red
             }
         }
-        catch{
-            $err = ($_ | ConvertFrom-Json)
-            [Console]::ForegroundColor = 'red'
-            [Console]::Error.WriteLine($err.error)
-            [Console]::ResetColor()
-            break
-            }
-         }
-    else{ 
-        Write-Host "Wrong Fileserver or Filesystem" -ForegroundColor Red
-        break
-        }}
     else{
-        Write-Host "SMB Not configured on $($src_system)" -ForegroundColor Red
+        Write-Host "Fileserver Not Configured on $($tgt_system)" -ForegroundColor Red
+        }
+    }    
+else{
+    Write-Host "SMB Not configured on $($tgt_system)" -ForegroundColor Red
     }
-    }
-
-
-
+}
+    
 
 
 
@@ -343,3 +383,4 @@ else{
 }
     
 
+ 
