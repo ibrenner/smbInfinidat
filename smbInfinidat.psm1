@@ -225,12 +225,7 @@ $headers = New-Headers $screds $dcreds
 $rposec = ConvertTime -time $rpo
 $intervalsec = ConvertTime -time $sync_interval
 Get-iboxver -ibox $src_system -hd $headers
-#if([System.Version]$ibxver.result.version -lt [System.Version]"4.0.40"){
-#    [Console]::ForegroundColor = 'red'
-#    [Console]::Error.WriteLine("Error: InfiniBox $($src_system) doesn't support SMB")
-#    [Console]::ResetColor()
-#    break 
-#}
+
 
 $smbtst = irm -Uri "https://$($src_system)/api/rest/tenants?name=SMB" -Headers $headers -SkipCertificateCheck
 if($smbtst.result){
