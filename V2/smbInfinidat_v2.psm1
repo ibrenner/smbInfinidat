@@ -161,25 +161,32 @@ function Get-ShareMeta{
    $filesystem
    )
    $cl = irm -Uri "https://$($ibox)/api/plugins/smb/cluster" -Method Get -SkipCertificateCheck -Headers $hd
-   $shr1 = irm -Uri "https://$($ibox)/api/plugins/smb/share?page_size=800" -Method Get -SkipCertificateCheck -Headers $hd
-   foreach($share in $shr1.result){
-    foreach($cls in $cl.result){
-         if ($share.cluster_uuid -eq $cls.cluster_uuid) {
+   $shr1 = irm -Uri "https://$($ibox)/api/plugins/smb/share" -Method Get -SkipCertificateCheck -Headers $hd
+   $shr_total = @()
+
+    foreach( $i in 1..$shr1.metadata.pages_total){
+        $shr2 = irm -Uri "https://$($ibox)/api/plugins/smb/share?page=$($i)" -Method Get -SkipCertificateCheck -Headers $hd
+        $shr_total += $shr2.result
+        }
+    
+    foreach($share in $shr_total){
+        foreach($cls in $cl.result){
+            if ($share.cluster_uuid -eq $cls.cluster_uuid) {
                  $share | Add-Member -MemberType NoteProperty -name "fileserver_name" -Value $cls.fileserver_name -Force
                  }
                }}
 
    if($fileserver -and $filesystem){
-       return ($shr1.result |  ?{$_.fileserver_name -eq $fileserver -and $_.filesystem_name -eq $filesystem })
+       return ($shr_total |  ?{$_.fileserver_name -eq $fileserver -and $_.filesystem_name -eq $filesystem })
     }
     elseif($filesystem){
-        return ($shr1.result |  ?{$_.filesystem_name -eq $filesystem})
+        return ($shr_total |  ?{$_.filesystem_name -eq $filesystem})
     }
     elseif($fileserver){
-        return ($shr1.result | ?{$_.fileserver_name -eq $fileserver})
+        return ($shr_total | ?{$_.fileserver_name -eq $fileserver})
    }
    else{
-        return $shr1.result
+        return $shr_total
    }
  }
 
