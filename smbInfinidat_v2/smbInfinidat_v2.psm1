@@ -191,6 +191,46 @@ function Get-ShareMeta{
  }
 
 
+ 
+ function New-Share{
+    param(
+    $ibox,
+    $hd,
+    $fileserver,
+    $filesystem,
+    $sharename,
+    $path,
+    $quota1
+    )
+    $fs_id = irm -Uri "https://$($ibox)/api/plugins/smb/filesystem?fileserver_name=$($fileserver)&name=$($filesystem)" -Method Get -SkipCertificateCheck -Headers $hd
+    if($fs_id.result){
+        $json = @{
+            "filesystem_uuid" = $fs_id.result.filesystem_uuid
+            "name" = $sharename
+            "path" = $path
+            "quota_size" = $quota1*1GB
+        }
+        $json_payload = $json | ConvertTo-Json
+        $share = irm -Uri "https://$($ibox)/api/plugins/smb/share" -Method Post -Body $json_payload -SkipCertificateCheck -Headers $hd  
+        return $share 
+    }
+    }
+
+
+function Remove-share{
+    param(
+        $ibox,
+        $hd,
+        $sharename
+        ) 
+        $shr_id = irm -uri "https://$($ibox)/api/plugins/smb/share?name=$($share_name)" -Method Get -SkipCertificateCheck -Headers $hd
+        if($shr_id.result){
+            $sharedel = irm -uri "https://$($ibox)/api/plugins/smb/share/$($shr_id.result.share_uuid)" -Method Delete -SkipCertificateCheck -Headers $hd
+            return $sharedel
+        }
+}
+
+
  <#
     .SYNOPSIS
     The New-InfiniboxSmbReplica function creates an Async replica for SMB volume.
@@ -310,6 +350,130 @@ else{
     
 
 
+ <#
+    .SYNOPSIS
+    The New-InfiniboxSmbShare function creates a new share for SMB filesystem.
+    .DESCRIPTION
+    Creates a new share for SMB filesystem. 
+    .INPUTS
+    source properties (ibox and credentials), fileserver, filesystem, share name, quota and internal path.
+    .OUTPUTS
+    Success or Failure of the operation.
+    .NOTES
+    Version:        2.0
+    Author:         Idan Brenner
+    Creation Date:  06/22/2020
+    Purpose/Change: Updated for new connection mgmt
+    *******Disclaimer:******************************************************
+    This script is offered "as is" with no warranty. 
+    While it has been tested and working in my environment, it is recommended that you first test 
+    it in a lab environment before using in a production environment. 
+    ************************************************************************
+  #>
+  function New-InfiniboxSmbShare{
+    Param(
+    [Parameter(Mandatory=$True,Position=1)]
+    [string]$src_system,
+
+    [Parameter(Mandatory=$True,Position=2)]
+    [string]$src_username,
+
+    [Parameter(Mandatory=$False,Position=3)]
+    [string]$src_password,
+   
+    [Parameter(Mandatory=$True,Position=4)]
+    [string]$fileserver,
+
+    [Parameter(Mandatory=$True,Position=5)]
+    [string]$filesystem,
+  
+    [Parameter(Mandatory=$True,Position=6)]
+    [string]$share_name,
+
+    [Parameter(Mandatory=$True,Position=7)]
+    [string]$internal_path,
+
+    [Parameter(Mandatory=$False,Position=8)]
+    [Int64]$quota = 0
+
+    )
+
+
+    CheckPSVer
+    $screds = EncodeCreds -User $src_username -Password $src_password -ibox $src_system
+    $headers = New-Headers $screds $dcreds
+    Get-iboxver -ibox $src_system -hd $headers
+    $smbtst = irm -Uri "https://$($src_system)/api/rest/tenants?name=SMB" -Headers $headers -SkipCertificateCheck
+    if($smbtst.result){
+        $shr1 = New-Share -ibox $src_system -hd $headers -fileserver $fileserver -filesystem $filesystem -sharename $share_name -path $internal_path -quota1 $quota
+        if($shr1.result){
+            write-host "Share Created" -ForegroundColor Green
+        }else{
+            Write-Host "Wrong Fileserver or Filesystem" -ForegroundColor Red
+            break
+        }
+    }else{
+        Write-Host "SMB Not configured on $($src_system)" -ForegroundColor Red
+        }
+
+    }
+
+    
+ <#
+    .SYNOPSIS
+    The Remove-InfiniboxSmbShare function removes a SMB share.
+    .DESCRIPTION
+    Removes a share for SMB filesystem. 
+    .INPUTS
+    source properties (ibox and credentials), share name.
+    .OUTPUTS
+    Success or Failure of the operation.
+    .NOTES
+    Version:        2.0
+    Author:         Idan Brenner
+    Creation Date:  06/22/2020
+    Purpose/Change: Updated for new connection mgmt
+    *******Disclaimer:******************************************************
+    This script is offered "as is" with no warranty. 
+    While it has been tested and working in my environment, it is recommended that you first test 
+    it in a lab environment before using in a production environment. 
+    ************************************************************************
+  #>
+  function Remove-InfiniboxSmbShare{
+    Param(
+    [Parameter(Mandatory=$True,Position=1)]
+    [string]$src_system,
+
+    [Parameter(Mandatory=$True,Position=2)]
+    [string]$src_username,
+
+    [Parameter(Mandatory=$False,Position=3)]
+    [string]$src_password,
+   
+    [Parameter(Mandatory=$True,Position=4)]
+    [string]$share_name
+
+    )
+
+
+    CheckPSVer
+    $screds = EncodeCreds -User $src_username -Password $src_password -ibox $src_system
+    $headers = New-Headers $screds $dcreds
+    Get-iboxver -ibox $src_system -hd $headers
+    $smbtst = irm -Uri "https://$($src_system)/api/rest/tenants?name=SMB" -Headers $headers -SkipCertificateCheck
+    if($smbtst.result){
+        $shr1 = Remove-Share -ibox $src_system -hd $headers -sharename $share_name 
+        if($shr1.result){
+            write-host "Share Deleted" -ForegroundColor Green
+        }else{
+            Write-Host "Wrong share name?" -ForegroundColor Red
+            break
+        }
+    }else{
+        Write-Host "SMB Not configured on $($src_system)" -ForegroundColor Red
+        }
+
+    }
 
 <#
     .SYNOPSIS
