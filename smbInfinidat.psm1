@@ -11,7 +11,6 @@ $ErrorActionPreference = "Stop"
     return $fs1
 }
 
-
 function Get-iboxver{
     param(
         $ibox,
@@ -70,7 +69,6 @@ function New-Replica{
                 break
         }}
 
-
 function CheckPSVer{
     $powershell_version = $PSVersionTable.PSVersion.Major
     if ($powershell_version -ge 6){
@@ -115,14 +113,12 @@ function New-Headers{
     return $hd
 }
 
-
 function ConvertTime{
     param(
     $time
     )
     return ($time*1000)
 }
-
 
 function Get-ShareMeta{
    param(
@@ -253,10 +249,6 @@ if($smbtst.result){
         Write-Host "SMB Not configured on $($src_system)" -ForegroundColor Red
     }
     }
-
-
-
-
 
 
 <#
