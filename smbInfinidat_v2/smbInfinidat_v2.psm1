@@ -17,13 +17,14 @@ function Get-iboxver{
         $ibox,
         $hd
     )
-    $iboxver = irm -Uri "https://$($ibox)/api/rest/system" -Method Get  -Headers $hd -SkipCertificateCheck
+    $iboxver = irm -Uri "https://$($ibox)/api/rest/system" -Method Get  -Headers $hd -SkipCertificateCheck -SessionVariable s1
     if([System.Version]$iboxver.result.version -lt [System.Version]"4.0.40"){
         [Console]::ForegroundColor = 'red'
         [Console]::Error.WriteLine("Error: InfiniBox $($ibox) doesn't support SMB")
         [Console]::ResetColor()
         break 
     }
+    # return $s1
 }
 
 
@@ -119,10 +120,10 @@ function EncodeCreds{
         $password,
         $ibox
     )
-    if(!$password){ 
-        $p = Read-Host "Enter password for $($user)@$($ibox)" -AsSecureString
-        $password = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($p))
-    }
+    # if(!$password){ 
+    #     $p = Read-Host "Enter password for $($user)@$($ibox)" -AsSecureString
+    #     $password = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($p))
+    # }
     $userpass  = [System.Text.Encoding]::UTF8.GetBytes("$($user):$($password)")
     $enc = [System.Convert]::ToBase64String($userpass)
     return $enc
@@ -152,20 +153,41 @@ function ConvertTime{
     return ($time*1000)
 }
 
+function New-iboxlogin{
+    param(
+        $ibox,
+        $user,
+        $hd,
+        $pass
+    )
+    $json = @{
+        "username" = $user
+        "password" = $pass
+        "clientid" = "obscure string"
+    }
+    $jpayload = $json | ConvertTo-Json
+    $login = iwr  "http://$($ibox)/api/rest/users/login" -Method 'POST' -Headers $hd -Body $jpayload -SessionVariable s1
+    if($login.StatusCode -eq 200){
+        return $s1
+    else {
+        break
+    }
+    }
+}
 
 function Get-ShareMeta{
    param(
    $ibox,
-   $hd,
+   $session,
    $fileserver,
    $filesystem
    )
-   $cl = irm -Uri "https://$($ibox)/api/plugins/smb/cluster" -Method Get -SkipCertificateCheck -Headers $hd
-   $shr1 = irm -Uri "https://$($ibox)/api/plugins/smb/share" -Method Get -SkipCertificateCheck -Headers $hd
+   $cl = irm -Uri "https://$($ibox)/api/plugins/smb/cluster" -Method Get -SkipCertificateCheck -WebSession $session
+   $shr1 = irm -Uri "https://$($ibox)/api/plugins/smb/share" -Method Get -SkipCertificateCheck -WebSession $session
    $shr_total = @()
 
     foreach( $i in 1..$shr1.metadata.pages_total){
-        $shr2 = irm -Uri "https://$($ibox)/api/plugins/smb/share?page=$($i)" -Method Get -SkipCertificateCheck -Headers $hd
+        $shr2 = irm -Uri "https://$($ibox)/api/plugins/smb/share?page=$($i)" -Method Get -SkipCertificateCheck -WebSession $session
         $shr_total += $shr2.result
         }
     
@@ -191,18 +213,17 @@ function Get-ShareMeta{
  }
 
 
- 
- function New-Share{
+  function New-Share{
     param(
     $ibox,
-    $hd,
+    $session,
     $fileserver,
     $filesystem,
     $sharename,
     $path,
     $quota1
     )
-    $fs_id = irm -Uri "https://$($ibox)/api/plugins/smb/filesystem?fileserver_name=$($fileserver)&name=$($filesystem)" -Method Get -SkipCertificateCheck -Headers $hd
+    $fs_id = irm -Uri "https://$($ibox)/api/plugins/smb/filesystem?fileserver_name=$($fileserver)&name=$($filesystem)" -Method Get -SkipCertificateCheck -WebSession $session
     if($fs_id.result){
         $json = @{
             "filesystem_uuid" = $fs_id.result.filesystem_uuid
@@ -211,7 +232,7 @@ function Get-ShareMeta{
             "quota_size" = $quota1*1GB
         }
         $json_payload = $json | ConvertTo-Json
-        $share = irm -Uri "https://$($ibox)/api/plugins/smb/share" -Method Post -Body $json_payload -SkipCertificateCheck -Headers $hd  
+        $share = irm -Uri "https://$($ibox)/api/plugins/smb/share" -Method Post -Body $json_payload -SkipCertificateCheck -WebSession $session
         return $share 
     }
     }
@@ -220,16 +241,60 @@ function Get-ShareMeta{
 function Remove-share{
     param(
         $ibox,
-        $hd,
+        $session,
         $sharename
         ) 
-        $shr_id = irm -uri "https://$($ibox)/api/plugins/smb/share?name=$($share_name)" -Method Get -SkipCertificateCheck -Headers $hd
+        $shr_id = irm -uri "https://$($ibox)/api/plugins/smb/share?name=$($share_name)" -Method Get -SkipCertificateCheck -WebSession $session
         if($shr_id.result){
-            $sharedel = irm -uri "https://$($ibox)/api/plugins/smb/share/$($shr_id.result.share_uuid)" -Method Delete -SkipCertificateCheck -Headers $hd
+            $sharedel = irm -uri "https://$($ibox)/api/plugins/smb/share/$($shr_id.result.share_uuid)" -Method Delete -SkipCertificateCheck -WebSession $session
             return $sharedel
         }
 }
 
+
+function New-fs{
+    param(
+        $ibox,
+        $session,
+        $fileserver,
+        $name,
+        $sc_int,
+        $sc_stg,
+        $sc_enabled,
+        $size
+    )
+
+    $cl_id = irm -Uri "http://$($ibox)/api/plugins/smb/cluster?fileserver_name=$($fileserver)" -Method Get -SkipCertificateCheck -WebSession $session
+    if($cl_id.result){
+        $json = @{
+            "cluster_uuid" = "$($cl_id.result.cluster_uuid)"
+            "name" = "$($name)"
+            "shadow_copy_interval" = "$($sc_int)"
+            "shadow_copy_storage" =  "$($sc_stg)"
+            "shadow_copy_support" = "$($sc_enabled)"
+            "size" = "$($size*1GB)"
+        }
+
+        $json_payload = $json | ConvertTo-Json 
+        $fsystem = irm -Uri "http://$($ibox)/api/plugins/smb/filesystem" -Method Post -Body $json_payload  -WebSession $session
+        return $fsystem
+    }else {
+        Write-Host "Fileserver not Found" -ForegroundColor Red
+    }
+
+}
+
+function get-pass{
+    param(
+        [ValidateNotNull()]
+        [parameter(Mandatory)]
+        $user,
+        $ibox
+    )
+    $p = Read-Host "Enter password for $($user)@$($ibox)" -AsSecureString
+    $password = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($p))
+    return $password
+}
 
  <#
     .SYNOPSIS
@@ -292,6 +357,9 @@ function New-InfiniboxSmbReplica{
 
       
 CheckPSVer
+if(!$src_password){
+    $src_password = get-pass -user $src_username -ibox $src_system
+}
 $screds = EncodeCreds -User $src_username -Password $src_password -ibox $src_system
 $dcreds = EncodeCreds -User $tgt_username -Password $tgt_password -ibox $tgt_system
 $headers = New-Headers $screds $dcreds
@@ -400,12 +468,16 @@ else{
 
 
     CheckPSVer
+    if(!$src_password){
+        $src_password = get-pass -ibox $src_system -user $src_username
+    }    
     $screds = EncodeCreds -User $src_username -Password $src_password -ibox $src_system
     $headers = New-Headers $screds $dcreds
+    $session = New-iboxlogin -ibox $src_system -hd $headers -user $src_username -pass $src_password
     Get-iboxver -ibox $src_system -hd $headers
     $smbtst = irm -Uri "https://$($src_system)/api/rest/tenants?name=SMB" -Headers $headers -SkipCertificateCheck
     if($smbtst.result){
-        $shr1 = New-Share -ibox $src_system -hd $headers -fileserver $fileserver -filesystem $filesystem -sharename $share_name -path $internal_path -quota1 $quota
+        $shr1 = New-Share -ibox $src_system -session $session -fileserver $fileserver -filesystem $filesystem -sharename $share_name -path $internal_path -quota1 $quota
         if($shr1.result){
             write-host "Share Created" -ForegroundColor Green
         }else{
@@ -457,12 +529,16 @@ else{
 
 
     CheckPSVer
+    if(!$src_password){
+        $src_password = get-pass -ibox $src_system -user $src_username
+    }
     $screds = EncodeCreds -User $src_username -Password $src_password -ibox $src_system
     $headers = New-Headers $screds $dcreds
+    $session = New-iboxlogin -ibox $src_system -hd $headers -user $src_username -pass $src_password
     Get-iboxver -ibox $src_system -hd $headers
     $smbtst = irm -Uri "https://$($src_system)/api/rest/tenants?name=SMB" -Headers $headers -SkipCertificateCheck
     if($smbtst.result){
-        $shr1 = Remove-Share -ibox $src_system -hd $headers -sharename $share_name 
+        $shr1 = Remove-Share -ibox $src_system -session $session -sharename $share_name 
         if($shr1.result){
             write-host "Share Deleted" -ForegroundColor Green
         }else{
@@ -475,11 +551,89 @@ else{
 
     }
 
+
+ <#
+    .SYNOPSIS
+    The New-InfiniboxSmbFS function creates a new FileSystem for SMB fileserver.
+    .DESCRIPTION
+    Creates a new Filesystem for SMB fileserver. 
+    .INPUTS
+    source properties (ibox and credentials), fileserver, filesystem, share name, quota and internal path.
+    .OUTPUTS
+    Success or Failure of the operation.
+    .NOTES
+    Version:        2.0
+    Author:         Idan Brenner
+    Creation Date:  06/22/2020
+    Purpose/Change: Updated for new connection mgmt
+    *******Disclaimer:******************************************************
+    This script is offered "as is" with no warranty. 
+    While it has been tested and working in my environment, it is recommended that you first test 
+    it in a lab environment before using in a production environment. 
+    ************************************************************************
+  #>
+  function New-InfiniboxSmbFS{
+    Param(
+    [Parameter(Mandatory=$True,Position=1)]
+    [string]$src_system,
+
+    [Parameter(Mandatory=$True,Position=2)]
+    [string]$src_username,
+
+    [Parameter(Mandatory=$False,Position=3)]
+    [string]$src_password,
+   
+    [Parameter(Mandatory=$True,Position=4)]
+    [string]$fileserver,
+
+    [Parameter(Mandatory=$True,Position=5)]
+    [string]$filesystem_name,
+  
+    [Parameter(Mandatory=$False,Position=6)]
+    [int64]$shadow_copy_interval = 480,
+
+    [Parameter(Mandatory=$False,Position=7)]
+    [int64]$shadow_copy_storage = 20,
+
+    [Parameter(Mandatory=$False,Position=8)]
+    [bool]$shadow_copy_enabled = $False,
+
+    [Parameter(Mandatory=$True,Position=9)]
+    [Int64]$size = 0
+
+    )
+
+
+    CheckPSVer
+    if(!$src_password){
+        $src_password = get-pass -ibox $src_system -user $src_username
+    }
+    $screds = EncodeCreds -User $src_username -Password $src_password -ibox $src_system
+    $headers = New-Headers $screds $dcreds
+    $session = New-iboxlogin -ibox $src_system -hd $headers -user $src_username -pass $src_password
+    Get-iboxver -ibox $src_system -hd $headers
+    $smbtst = irm -Uri "https://$($src_system)/api/rest/tenants?name=SMB" -Headers $headers -SkipCertificateCheck
+    if($smbtst.result){
+        $fs1 = New-fs -ibox $src_system -session $session -fileserver $fileserver -name $filesystem_name -sc_int $shadow_copy_interval -sc_stg $shadow_copy_storage -sc_enabled $shadow_copy_enabled -size $size
+        if($fs1.result){
+            write-host "Filesystem Created" -ForegroundColor Green
+        }else{
+            Write-Host "Wrong Fileserver or Filesystem" -ForegroundColor Red
+            break
+        }
+    }else{
+        Write-Host "SMB Not configured on $($src_system)" -ForegroundColor Red
+        }
+
+    }
+
+
+
 <#
     .SYNOPSIS
     Getting Share metadata information.
     .DESCRIPTION
-    The Get-smbShares function gets the smb shares metadata information from InfiniBox.
+    The Get-InfiniboxSmbShares function gets the smb shares metadata information from InfiniBox.
     .INPUTS
     source properties (ibox and credentials), fileserver, filesystem and output type.
     .OUTPUTS
@@ -521,13 +675,17 @@ function Get-InfiniboxSmbShares{
        )
  
 CheckPSVer
+if(!$src_password){
+    $src_password = get-pass -ibox $src_system -user $src_username
+}
 $screds = EncodeCreds -User $src_username -Password $src_password -ibox $src_system
 $headers = New-Headers $screds $dcreds
+$session = New-iboxlogin -ibox $src_system -hd $headers -user $src_username -pass $src_password
 Get-iboxver -ibox $src_system -hd $headers
 
 $smbtst = irm -Uri "https://$($src_system)/api/rest/tenants?name=SMB" -Headers $headers -SkipCertificateCheck
 if($smbtst.result){
-    $shr = Get-ShareMeta -ibox $src_system -hd $headers -fileserver $fileserver -filesystem $filesystem
+    $shr = Get-ShareMeta -ibox $src_system -session $session -fileserver $fileserver -filesystem $filesystem
     if($shr){
         if($csv -and $outputfile){
             Write-Host "inside"
