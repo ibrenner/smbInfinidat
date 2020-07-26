@@ -221,7 +221,8 @@ function Get-ShareMeta{
     $filesystem,
     $sharename,
     $path,
-    $quota1
+    $quota1,
+    $abe
     )
     $fs_id = irm -Uri "https://$($ibox)/api/plugins/smb/filesystem?fileserver_name=$($fileserver)&name=$($filesystem)" -Method Get -SkipCertificateCheck -WebSession $session
     if($fs_id.result){
@@ -230,6 +231,7 @@ function Get-ShareMeta{
             "name" = $sharename
             "path" = $path
             "quota_size" = $quota1*1GB
+            "access_based_enumeration" = $abe
         }
         $json_payload = $json | ConvertTo-Json
         $share = irm -Uri "https://$($ibox)/api/plugins/smb/share" -Method Post -Body $json_payload -SkipCertificateCheck -WebSession $session
@@ -462,7 +464,10 @@ else{
     [string]$internal_path,
 
     [Parameter(Mandatory=$False,Position=8)]
-    [Int64]$quota = 0
+    [Int64]$quota = 0,
+
+    [Parameter(Mandatory=$False,Position=9)]
+    [bool]$ABE = $False
 
     )
 
@@ -477,7 +482,7 @@ else{
     Get-iboxver -ibox $src_system -hd $headers
     $smbtst = irm -Uri "https://$($src_system)/api/rest/tenants?name=SMB" -Headers $headers -SkipCertificateCheck
     if($smbtst.result){
-        $shr1 = New-Share -ibox $src_system -session $session -fileserver $fileserver -filesystem $filesystem -sharename $share_name -path $internal_path -quota1 $quota
+        $shr1 = New-Share -ibox $src_system -session $session -fileserver $fileserver -filesystem $filesystem -sharename $share_name -path $internal_path -quota1 $quota -abe $ABE
         if($shr1.result){
             write-host "Share Created" -ForegroundColor Green
         }else{
